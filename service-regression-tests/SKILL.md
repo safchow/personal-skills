@@ -69,6 +69,14 @@ The service under test is a black box: run it however the repo already does (dev
 - State conflicts: wrong-state resources (409) and unknown IDs (404).
 - Idempotency/side effects: repeat and cancel flows leave observable state consistent across follow-up reads.
 
+## CI integration
+
+- Run the suite as a required status check on pull requests to the protected branch; block merge on failure.
+- Point the base-URL variable at the service instance the pipeline brings up.
+- Bringing up the service and its dependencies (database, migrations, containers, seed data) is the service's responsibility, invoked from the pipeline — never from inside the suite. Mirror whatever the repo already does to boot the service.
+- Keep the black-box contract in CI too: the pipeline may provision the service's backing store, but the suite still talks to the service over HTTP only and never touches that store.
+- For the concrete pipeline, branch-protection, and merge-gating mechanics, use the ci-merge-gating skill.
+
 ## Expanding the suite
 
 - New endpoint: add a describe block, or a new spec file for a new resource, and walk the coverage matrix.

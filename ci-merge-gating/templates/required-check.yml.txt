@@ -1,0 +1,70 @@
+# Required check: runs a check on every PR and gates merges on it.
+#
+# This workflow is a SKELETON. The steps marked PLACEHOLDER are repo-specific
+# and must be filled in. Any dependency provisioning (services, migrations,
+# booting a service the check needs) lives HERE in the pipeline — never inside
+# the check command itself.
+#
+# Merge gating requires TWO things:
+#   1. this workflow running the check on pull requests, AND
+#   2. branch protection marking the job below (by name) as a required status
+#      check. A green/red run alone does not block merges.
+
+name: Required Check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  # The branch-protection required check matches this job by NAME. Keep it
+  # stable — renaming it silently removes the gate until protection is updated.
+  required-check:
+    name: Required check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # PLACEHOLDER: provision dependencies the check needs (e.g. a database).
+    # Delete this block if the check has no such dependency.
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app_dev
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d app_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      # PLACEHOLDER: set up the repo's toolchain (language runtime, package
+      # manager). Example uses Node; replace to match the repo.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # PLACEHOLDER: deterministic, locked dependency install.
+      - name: Install dependencies
+        run: '<install command, e.g. "npm ci">'
+
+      # PLACEHOLDER: provision dependencies (run migrations, seed data) and, if
+      # the check needs a running service, boot it here. Skip if not applicable.
+      - name: Provision and boot
+        run: '<provision + start commands, or delete>'
+
+      # PLACEHOLDER: the check that gates merges (tests, typecheck, lint, ...).
+      - name: Run check
+        run: '<check command, e.g. "npm test">'
