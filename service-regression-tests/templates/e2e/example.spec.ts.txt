@@ -1,0 +1,84 @@
+import { expect, test } from '@playwright/test'
+import { bearer } from './helpers/client.js'
+import { expectErrorCode, expectStatus } from './helpers/assertions.js'
+import { TEST_PASSWORD, createUser, loginAs } from './helpers/fixtures.js'
+
+/**
+ * EXAMPLE spec showing the required shape. Copy this per resource, rename the
+ * describe blocks to the real endpoints, and walk the coverage matrix from
+ * SKILL.md: happy path, validation, boundaries, authz/authn, state conflicts,
+ * idempotency.
+ *
+ * Note: no beforeEach reset — isolation comes from uniqueId()-namespaced data
+ * created via the API. Add `await resetIfAvailable(request)` only if the service
+ * offers a test-reset endpoint.
+ */
+
+test.describe('POST /api/<resource>', () => {
+  test('creates the resource and a follow-up read reflects it (happy path)', async ({
+    request,
+  }) => {
+    const user = await createUser(request)
+    const { token } = await loginAs(request, user.username, TEST_PASSWORD)
+
+    const res = await request.post('/api/<resource>', {
+      headers: bearer(token),
+      data: { name: 'example', amount: 25 },
+    })
+    expect(res.status()).toBe(201)
+    const created = (await res.json()).resource
+    expect(created).toMatchObject({ name: 'example', amount: 25 })
+
+    // Verify the side effect through the API, never a DB read.
+    const read = await request.get(`/api/<resource>/${created.id}`, {
+      headers: bearer(token),
+    })
+    expect((await read.json()).resource).toMatchObject({ id: created.id })
+  })
+
+  test('rejects invalid input with a validation error (422)', async ({ request }) => {
+    const user = await createUser(request)
+    const { token } = await loginAs(request, user.username, TEST_PASSWORD)
+
+    const res = await request.post('/api/<resource>', {
+      headers: bearer(token),
+      data: { name: '', amount: -1 },
+    })
+    await expectStatus(res, 422)
+    await expectErrorCode(res, 'E_VALIDATION')
+  })
+
+  test('requires authentication (401)', async ({ request }) => {
+    const res = await request.post('/api/<resource>', {
+      data: { name: 'example', amount: 25 },
+    })
+    expect(res.status()).toBe(401)
+  })
+
+  test('forbids acting on another user\u2019s resource (403)', async ({ request }) => {
+    const owner = await createUser(request)
+    const ownerAuth = await loginAs(request, owner.username, TEST_PASSWORD)
+    const created = await request.post('/api/<resource>', {
+      headers: bearer(ownerAuth.token),
+      data: { name: 'owned', amount: 10 },
+    })
+    const id = (await created.json()).resource.id
+
+    const intruder = await createUser(request)
+    const intruderAuth = await loginAs(request, intruder.username, TEST_PASSWORD)
+    const res = await request.delete(`/api/<resource>/${id}`, {
+      headers: bearer(intruderAuth.token),
+    })
+    await expectStatus(res, 403)
+    await expectErrorCode(res, 'E_FORBIDDEN')
+  })
+
+  test('404s for an unknown id', async ({ request }) => {
+    const user = await createUser(request)
+    const { token } = await loginAs(request, user.username, TEST_PASSWORD)
+    const res = await request.get('/api/<resource>/does_not_exist', {
+      headers: bearer(token),
+    })
+    expect(res.status()).toBe(404)
+  })
+})

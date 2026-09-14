@@ -1,0 +1,75 @@
+import { type APIRequestContext } from '@playwright/test'
+import { uniqueId } from './client.js'
+import { expectOk } from './assertions.js'
+
+/**
+ * Entity builders and interaction helpers. Every piece of test setup goes
+ * through a named function here — never inline API plumbing in a spec.
+ *
+ * CRITICAL: all state is created THROUGH THE API, never by writing to a
+ * database. This keeps the suite portable across any backing store and honors
+ * the black-box contract. Namespace new entities with `uniqueId()` so tests
+ * stay isolated without a shared reset.
+ *
+ * The functions below are EXAMPLES. Rename/replace the endpoints and payloads
+ * to match the service under test, but keep the pattern:
+ *   - sensible defaults + a Partial<> overrides object
+ *   - assert success with expectOk
+ *   - return what the test needs (created entity, token, etc.)
+ */
+
+const DEFAULT_PASSWORD = 'testpass123'
+export const TEST_PASSWORD = DEFAULT_PASSWORD
+
+/** EXAMPLE: create a user via the signup endpoint. */
+export async function createUser(
+  request: APIRequestContext,
+  overrides: Partial<{ username: string; name: string; password: string }> = {},
+): Promise<{ id: string; username: string; password: string }> {
+  const username = overrides.username ?? uniqueId('user')
+  const password = overrides.password ?? DEFAULT_PASSWORD
+  const res = await request.post('/api/auth/signup', {
+    data: {
+      username,
+      name: overrides.name ?? `Test ${username}`,
+      password,
+    },
+  })
+  await expectOk(res)
+  const body = await res.json()
+  return { ...body.user, password }
+}
+
+/** EXAMPLE: log in and return the issued bearer token. */
+export async function loginAs(
+  request: APIRequestContext,
+  username: string,
+  password: string = DEFAULT_PASSWORD,
+): Promise<{ token: string; user: { id: string; username: string } }> {
+  const res = await request.post('/api/auth/login', {
+    data: { username, password },
+  })
+  await expectOk(res)
+  return res.json()
+}
+
+/** EXAMPLE: create a user and return a ready-to-use bearer token in one step. */
+export async function createAuthedUser(
+  request: APIRequestContext,
+  overrides: Partial<{ username: string; password: string }> = {},
+): Promise<{ token: string; username: string }> {
+  const user = await createUser(request, overrides)
+  const { token } = await loginAs(request, user.username, user.password)
+  return { token, username: user.username }
+}
+
+/**
+ * OPTIONAL: if — and only if — the service exposes a test-only reset endpoint
+ * (guarded behind a test flag), call this in `beforeEach`. Otherwise rely on
+ * `uniqueId()` namespacing for isolation and delete this helper.
+ */
+export async function resetIfAvailable(request: APIRequestContext): Promise<void> {
+  const res = await request.post('/api/test/reset')
+  if (res.status() === 404) return // no reset endpoint; namespacing handles it
+  await expectOk(res)
+}

@@ -1,0 +1,37 @@
+import { randomBytes } from 'node:crypto'
+import { request as playwrightRequest, type APIRequestContext } from '@playwright/test'
+
+/**
+ * Base URL of the service under test. Everything behind it is a black box.
+ */
+export const BASE_URL = process.env.TEST_BASE_URL ?? 'http://localhost:3334'
+
+/**
+ * Collision-proof suffix so each test can create its own data without relying
+ * on a shared database reset. Prefer namespacing over truncation: the DB is a
+ * black box, so tests must not assume they can wipe it.
+ *
+ *   const username = uniqueId('user') // -> "user_9f3a1c7b2d40"
+ */
+export function uniqueId(prefix = 't'): string {
+  return `${prefix}_${randomBytes(6).toString('hex')}`
+}
+
+/**
+ * A request context that presets a bearer token on every request. Call
+ * `dispose()` on the returned context when the test is done with it.
+ */
+export async function authedContext(token: string): Promise<APIRequestContext> {
+  return playwrightRequest.newContext({
+    baseURL: BASE_URL,
+    extraHTTPHeaders: {
+      authorization: `Bearer ${token}`,
+      accept: 'application/json',
+    },
+  })
+}
+
+/** Convenience header object for one-off authed requests. */
+export function bearer(token: string): { authorization: string } {
+  return { authorization: `Bearer ${token}` }
+}
