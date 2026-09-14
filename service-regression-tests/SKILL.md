@@ -11,65 +11,63 @@ disable-model-invocation: true
 
 # Service Regression Tests
 
-Build regression suites that exercise a service through its public REST API only and assert on observable behavior — status codes and response bodies. Everything behind the API is a black box: the framework, the database, caches, queues. The suite never imports app internals and never touches the database directly. Seeding and isolation happen through the API. Playwright's API testing client is the runner in every repo for consistency.
+Purpose: build a Playwright regression suite that exercises one backend service through its public REST API only. Everything behind the API is a black box (framework, database, cache, queue). Assert on observable behavior: status codes, response bodies, and side effects confirmed by follow-up API reads.
 
-The template files referenced below are stored as raw text with a `.txt` extension so they are not picked up by any compiler or linter in this skills repo. When scaffolding a suite, copy each template into the target repo and rename it back to its real extension (drop the trailing `.txt`).
+Templates ship as raw text with a `.txt` suffix so no compiler or linter reads them here. On copy into a target repo, remove the trailing `.txt` from each file.
 
-## Core principles
+## Rules (non-negotiable)
 
-1. REST black box. Talk to the running service over HTTP only. No app imports, no DB/ORM access, no queue or cache pokes. If you can't observe it through the API, don't assert on it.
-2. Seed through the API. Create every piece of setup state by calling the service's own endpoints (signup, create-resource, etc.), never by writing to a store. This keeps the suite portable across any backing database.
-3. Isolation without a shared reset. Because the DB is a black box, achieve isolation by giving each test its own uniquely-named data (see the `uniqueId` helper in the client template) and asserting only on what that test created. Never assert on global counts. If — and only if — the service exposes a test-only reset endpoint, call it in a beforeEach hook.
-4. Modular fixtures. All setup goes through named helper functions in the fixtures file, never inline API-plumbing inside a test. Adding a resource means adding a builder.
-5. Consistency over cleverness. Follow the layout, naming, and assertion helpers in the templates exactly, so every service's suite reads the same way.
+- REST only. Talk to the running service over HTTP. No app imports, no DB/ORM access, no queue or cache pokes. If it is not observable through the API, do not assert on it.
+- Seed through the API. Create all setup state by calling the service's own endpoints. Never write to a store directly.
+- Isolate with unique names, not resets. Give each test uniquely-named data via the `uniqueId` helper; assert only on what that test created. Never assert on global counts.
+- Reset only if offered. Call a reset endpoint in `beforeEach` only if the service exposes a test-only one; otherwise rely on `uniqueId` namespacing.
+- Setup lives in fixtures. All setup goes through named helper functions in the fixtures file. Never inline API plumbing in a test. Adding a resource means adding a builder.
+- Match the templates. Follow their layout, naming, and assertion helpers exactly so every suite reads the same.
 
-## Template files
-
-This skill ships copy-paste templates. Read them when scaffolding; they are the source of truth for structure and are meant to be dropped into a repo and edited. Each is stored with a `.txt` suffix that must be removed on copy.
+## Template files (read before scaffolding)
 
 - templates/playwright.config.ts.txt — runner config; base URL from env, serial workers.
-- templates/e2e/helpers/client.ts.txt — base URL, the `uniqueId` generator, and an authed request-context factory.
+- templates/e2e/helpers/client.ts.txt — base URL, the `uniqueId` generator, authed request-context factory.
 - templates/e2e/helpers/assertions.ts.txt — the `expectOk`, `expectStatus`, and `expectErrorCode` helpers.
 - templates/e2e/helpers/fixtures.ts.txt — example API-driven builders (`createUser`, `loginAs`) to adapt.
-- templates/e2e/example.spec.ts.txt — a spec showing the required shape and coverage.
+- templates/e2e/example.spec.ts.txt — spec showing the required shape and coverage.
 
-## Directory layout
+## Layout
 
-Drop the suite into the target service repo under a top-level tests directory. It contains the Playwright config plus an e2e directory. Inside e2e, a helpers directory holds the client, assertions, and fixtures modules, and each API surface gets its own spec file. Use one spec file per resource or API surface, and group related endpoints with a describe block named for the HTTP method and path.
+- Put the suite under a top-level tests directory in the target service repo.
+- It holds the Playwright config plus an e2e directory.
+- Inside e2e: a helpers directory (client, assertions, fixtures) plus one spec file per resource or API surface.
+- Group related endpoints in a describe block named for the HTTP method and path.
 
 ## Setup workflow
 
-When introducing the suite to a new repo, work through these steps:
+1. Add the Playwright test package as a devDependency.
+2. Copy the templates into the target repo's tests directory, dropping the `.txt` suffix; set the base-URL environment variable (or edit the default in client and config).
+3. Adapt the fixtures module to the service's real create and login endpoints.
+4. Adapt the assertions module's error-code helper to the service's error envelope shape.
+5. Add a test script that runs Playwright.
+6. Write the first spec against the service's auth or entry surface.
+7. Run the suite against a running instance and confirm it passes.
 
-- Add the Playwright test package as a devDependency.
-- Copy the templates into the target repo's tests directory, dropping the `.txt` suffix from each file, and set the base-URL environment variable (or edit the default in the client and config).
-- Adapt the fixtures module to the service's real create and login endpoints.
-- Adapt the assertions module's error-code helper to the service's error envelope shape.
-- Add a test script that runs Playwright.
-- Write the first spec against the service's auth or entry surface.
-- Confirm the suite runs against a running instance and passes.
+The service under test is a black box: run it however the repo already does (dev command, container, deployed instance) and point the base-URL variable at it. Do not stand up databases or migrations inside this suite — that is the service's job.
 
-The service under test is a black box: run it however the repo already does (dev command, container, deployed instance) and point the base-URL environment variable at it. Do not stand up databases or migrations from inside this suite — that belongs to the service, not the tests.
+## Spec conventions
 
-## Spec file conventions
-
-- Import only from the helpers modules; never touch app internals or a database.
-- Seed via fixtures (API calls), and namespace created entities with the unique-id generator for isolation. Only add a reset hook if the service exposes a test-only reset endpoint.
-- Group by endpoint with a describe block named for the HTTP method and path; nest a further describe for a coherent cluster of cases.
-- Name tests as behavior statements: what happens under what condition (for example, rejects a wager that exceeds the balance, or requires authentication).
+- Import only from the helpers modules. Never touch app internals or a database.
+- Seed via fixtures (API calls); namespace created entities with `uniqueId` for isolation. Add a reset hook only if the service exposes a test-only reset endpoint.
+- Group by endpoint with a describe named for the HTTP method and path; nest a further describe for a coherent cluster of cases.
+- Name tests as behavior statements: what happens under what condition (e.g. rejects a wager that exceeds the balance; requires authentication).
 - Attach auth per-request with a bearer authorization header, or use the authed-context factory for a token-preset context.
-- Assert the full outcome: the status code, the body shape, and any side effects verified with a follow-up API read rather than a database peek.
+- Assert the full outcome: status code, body shape, and any side effect verified via a follow-up API read (never a database peek).
 
-## Coverage matrix per endpoint
+## Coverage matrix (per endpoint)
 
-For each endpoint, cover this matrix so regressions surface consistently:
-
-- Happy path: valid input returns the right status and body, and a follow-up read reflects the change.
+- Happy path: valid input returns the right status and body; a follow-up read reflects the change.
 - Validation: malformed or invalid input returns the validation status (typically 422) and the expected error code.
-- Boundaries: at-limit values such as exactly equal, one over, and zero or empty.
-- Authz and authn: unauthenticated (401) and forbidden or not-owner (403).
-- State conflicts: operating on wrong-state resources (409), and unknown IDs (404).
-- Idempotency and side effects: repeat and cancel flows leave observable state consistent across follow-up reads.
+- Boundaries: at-limit values — exactly equal, one over, zero or empty.
+- Authz/authn: unauthenticated (401) and forbidden or not-owner (403).
+- State conflicts: wrong-state resources (409) and unknown IDs (404).
+- Idempotency/side effects: repeat and cancel flows leave observable state consistent across follow-up reads.
 
 ## Expanding the suite
 
