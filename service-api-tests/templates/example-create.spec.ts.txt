@@ -1,0 +1,82 @@
+import { expect, test } from '@playwright/test'
+import { bearer } from './helpers/client.js'
+import { expectErrorCode, expectStatus } from './helpers/assertions.js'
+import { createAuthedUser } from './helpers/fixtures.js'
+
+/**
+ * CANONICAL SPEC STRUCTURE — copy this shape for every endpoint.
+ *
+ * File:  ONE spec file per endpoint, named after that endpoint (e.g.
+ *        <resource>-create.spec.ts, <resource>-detail.spec.ts). Never put two
+ *        endpoints in one file.
+ * Suite: a single top-level describe named exactly "<METHOD> <path>".
+ * Test:  one test per coverage-matrix row (SKILL.md), named as a behavior
+ *        statement. Each test body follows Arrange / Act / Assert:
+ *          Arrange — seed state through fixtures (API calls), namespaced by uniqueId().
+ *          Act     — a SINGLE call to the endpoint under test.
+ *          Assert  — status code, body shape, and side effects via a follow-up API read.
+ *
+ * Cover the matrix rows that apply to THIS endpoint; not all apply to each (a
+ * collection POST has no 404; an item GET has no 422).
+ *
+ * Isolation: no beforeEach reset — each test creates its own uniqueId()-namespaced
+ * data. Add `await resetIfAvailable(request)` only if the service offers a reset.
+ *
+ * This file: the collection create endpoint. Matrix rows: happy, validation,
+ * boundary, authn.
+ */
+test.describe('POST /api/<resource>', () => {
+  test('creates the resource and a follow-up read reflects it', async ({ request }) => {
+    // Arrange
+    const { token } = await createAuthedUser(request)
+
+    // Act
+    const res = await request.post('/api/<resource>', {
+      headers: bearer(token),
+      data: { name: 'example', amount: 25 },
+    })
+
+    // Assert: status, body, then the side effect through the API (never a DB read).
+    await expectStatus(res, 201)
+    const created = (await res.json()).resource
+    expect(created).toMatchObject({ name: 'example', amount: 25 })
+
+    const read = await request.get(`/api/<resource>/${created.id}`, {
+      headers: bearer(token),
+    })
+    await expectStatus(read, 200)
+    expect((await read.json()).resource).toMatchObject({ id: created.id })
+  })
+
+  test('rejects invalid input with a validation error (422)', async ({ request }) => {
+    const { token } = await createAuthedUser(request)
+
+    const res = await request.post('/api/<resource>', {
+      headers: bearer(token),
+      data: { name: '', amount: -1 },
+    })
+
+    await expectStatus(res, 422)
+    await expectErrorCode(res, 'E_VALIDATION')
+  })
+
+  test('rejects an amount of zero at the lower boundary (422)', async ({ request }) => {
+    const { token } = await createAuthedUser(request)
+
+    const res = await request.post('/api/<resource>', {
+      headers: bearer(token),
+      data: { name: 'edge', amount: 0 },
+    })
+
+    await expectStatus(res, 422)
+    await expectErrorCode(res, 'E_VALIDATION')
+  })
+
+  test('requires authentication (401)', async ({ request }) => {
+    const res = await request.post('/api/<resource>', {
+      data: { name: 'example', amount: 25 },
+    })
+
+    await expectStatus(res, 401)
+  })
+})

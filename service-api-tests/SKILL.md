@@ -33,13 +33,16 @@ Templates ship as raw text with a `.txt` suffix so no compiler or linter reads t
 - templates/helpers/client.ts.txt — base URL, the `uniqueId` generator, authed request-context factory.
 - templates/helpers/assertions.ts.txt — the `expectOk`, `expectStatus`, and `expectErrorCode` helpers.
 - templates/helpers/fixtures.ts.txt — example API-driven builders (`createUser`, `loginAs`) to adapt.
-- templates/example.spec.ts.txt — spec showing the required shape and coverage.
+- templates/example-create.spec.ts.txt — collection create endpoint spec; carries the canonical structure doc.
+- templates/example-detail.spec.ts.txt — item read endpoint spec (authz and unknown-id cases).
+- templates/example-delete.spec.ts.txt — item delete endpoint spec (side-effect read, idempotency).
 
 ## Layout
 
 - Put the suite under a top-level tests directory in the target service repo.
-- It holds the Playwright config, a helpers directory (client, assertions, fixtures), and one spec file per resource or API surface.
-- Group related endpoints in a describe block named for the HTTP method and path.
+- It holds the Playwright config, a helpers directory (client, assertions, fixtures), and one spec file per endpoint.
+- Name each spec file after its endpoint (e.g. resource-create.spec.ts, resource-detail.spec.ts, resource-delete.spec.ts).
+- Each spec has a single top-level describe named for the HTTP method and path.
 
 ## Setup workflow
 
@@ -58,7 +61,7 @@ For local runs, prefer letting Playwright boot the service via the config's `web
 ## Spec conventions
 
 - Import only from the helpers modules. Never touch app internals or a database.
-- Follow the canonical structure in the example spec exactly, so every suite reads the same. File → one resource (or one endpoint for large resources). Describe → exactly one endpoint, named "<METHOD> <path>"; never mix endpoints in a describe. Test → one coverage-matrix row.
+- Follow the canonical structure in the example specs exactly, so every suite reads the same. File → exactly one endpoint, named after it. Describe → a single top-level block named "<METHOD> <path>"; never mix endpoints. Test → one coverage-matrix row.
 - Structure every test body as Arrange / Act / Assert: seed state through fixtures, make a single call to the endpoint under test, then assert. Do not exercise a second endpoint except as the follow-up read that confirms a side effect.
 - Cover the matrix rows that apply to the endpoint; not all apply to each (a collection POST has no 404; an item GET has no 422).
 - Seed via fixtures (API calls); namespace created entities with `uniqueId` for isolation. Add a reset hook only if the service exposes a test-only reset endpoint.
@@ -95,7 +98,7 @@ Some resources have no create endpoint — they come into existence only through
 
 ## Expanding the suite
 
-- New endpoint: add a describe block, or a new spec file for a new resource, and walk the coverage matrix.
+- New endpoint: add a new spec file named for that endpoint and walk the coverage matrix.
 - New entity: add an API builder to the fixtures module; never inline the plumbing in a spec.
 - New error code: assert it with the error-code helper; keep envelope handling in the helper.
 - New auth scheme: adapt the authed-context factory and login helper only.
