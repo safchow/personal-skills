@@ -64,6 +64,26 @@ export async function createAuthedUser(
 }
 
 /**
+ * EXAMPLE: seed a resource that has no direct create endpoint by driving the
+ * real inbound surface — here, simulating an external-provider webhook. This
+ * stays black-box (HTTP only) and exercises the service's real write path, so
+ * it catches write-path bugs. Verify the outcome afterwards with an API read.
+ *
+ * ADAPT the endpoint and payload to the service's webhook contract. If the
+ * receiver verifies a provider signature, satisfy it the way the provider's
+ * sandbox does (compute the real signature with the test secret) rather than
+ * bypassing verification, so the true write path stays under test. For
+ * multi-step flows, chain the calls the provider would make (see SKILL.md).
+ */
+export async function seedViaWebhook(
+  request: APIRequestContext,
+  event: Record<string, unknown>,
+): Promise<void> {
+  const res = await request.post('/api/webhooks/<provider>', { data: event })
+  await expectOk(res)
+}
+
+/**
  * OPTIONAL: if — and only if — the service exposes a test-only reset endpoint
  * (guarded behind a test flag), call this in `beforeEach`. Otherwise rely on
  * `uniqueId()` namespacing for isolation and delete this helper.

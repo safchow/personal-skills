@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test'
 
 /**
- * Playwright config for a REST regression suite.
+ * Playwright config for a black-box REST API suite.
  *
  *   TEST_BASE_URL=https://staging.example.com npx playwright test
  *
@@ -33,12 +33,20 @@ export default defineConfig({
   projects: [{ name: 'api', testMatch: /.*\.spec\.ts$/ }],
 
   /**
-   * OPTIONAL: let Playwright boot the service itself. Uncomment and set the
-   * command to the repo's start script if you want a self-contained run. Keep
-   * any environment/database wiring inside that command — not in this suite.
+   * PREFERRED for local runs: let Playwright boot the service itself so the
+   * suite is self-contained. Set `command` to the repo's start script. Keep all
+   * environment/database wiring inside that command — not in this suite.
+   *
+   * GOTCHA: if you inject a test environment here (e.g. a test DATABASE_URL),
+   * make sure those variables are set BEFORE the service's own dotenv loader
+   * runs (for example via cross-env in the command), or the dev `.env` can leak
+   * into the test process and point the suite at the wrong store.
+   *
+   * When running against an already-running, deployed, or CI-provisioned
+   * instance instead, leave this block commented out and set TEST_BASE_URL.
    */
   // webServer: {
-  //   command: '<repo start command, e.g. "npm start">',
+  //   command: '<repo start command, e.g. "cross-env DATABASE_URL=... npm start">',
   //   url: `${BASE_URL}/health`,
   //   reuseExistingServer: !process.env.CI,
   //   timeout: 60_000,
