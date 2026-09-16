@@ -2,87 +2,60 @@
 name: service-api-tests
 description: >-
   Scaffold and expand black-box REST API tests that target a single
-  backend service through its public HTTP API using Playwright, independent of
-  the framework, database, and every other layer (all treated as black boxes).
-  Use when adding a black-box API suite to a repo, writing new endpoint tests,
-  or standardizing how service-level HTTP tests are structured, seeded, and
+  backend service and verify its behavior only through its public HTTP API
+  using Playwright, treating the framework and internals as a black box. Use
+  when adding a black-box API suite to a repo, writing new endpoint tests, or
+  standardizing how service-level HTTP tests are structured, seeded, and
   isolated. These are single-service, black-box tests — not cross-system e2e.
 disable-model-invocation: true
 ---
 
 # Service API Tests
 
-Purpose: build a Playwright suite of black-box API tests that exercise one backend service through its public REST API only. Everything behind the API is a black box (framework, database, cache, queue). Assert on observable behavior: status codes, response bodies, and side effects confirmed by follow-up API reads.
+Build a Playwright suite of black-box API tests for one backend service. The test boundary is that single service: drive it over HTTP and verify only what the API exposes — never call a real third party, drive a UI, or coordinate other services (that would be cross-system e2e). "Regression" is a role these play in CI, not their scope.
 
-Scope: the test boundary is a single service. Fixtures may simulate an external provider's inbound events (e.g. POST a webhook payload to the service's own receiver) but never call a real third party, drive a UI, or coordinate multiple services — that would make these cross-system e2e tests. "Regression" is a role these tests play in CI (a merge gate), not their scope; label and organize them as API/service tests.
-
-Templates ship as raw text with a `.txt` suffix so no compiler or linter reads them here. On copy into a target repo, remove the trailing `.txt` from each file.
+Templates ship as raw text with a `.txt` suffix so no compiler or linter reads them here. On copy into a target repo, remove the trailing `.txt`.
 
 ## Rules (non-negotiable)
 
-- REST only. Talk to the running service over HTTP. No app imports, no DB/ORM access, no queue or cache pokes. If it is not observable through the API, do not assert on it.
-- Seed through the API. Create setup state by calling the service's own endpoints; do not write to a store directly. If a resource has no create endpoint, drive the real inbound surface that creates it (see "Seeding resources with no direct create endpoint") — never reach into the database or add a test-only backdoor.
-- Isolate with unique names, not resets. Give each test uniquely-named data via the `uniqueId` helper; assert only on what that test created. Never assert on global counts.
-- Reset only if offered. Call a reset endpoint in `beforeEach` only if the service exposes a test-only one; otherwise rely on `uniqueId` namespacing. Never truncate or otherwise reach into a store directly.
-- Setup lives in fixtures. All setup goes through named helper functions in the fixtures file. Never inline API plumbing in a test. Adding a resource means adding a builder.
-- Match the templates. Follow their layout, naming, and assertion helpers exactly so every suite reads the same.
+- Verify only over HTTP. Assert on status codes, response bodies, and side effects confirmed by a follow-up API read. No app imports, no store peeks in assertions.
+- Seed through the service's endpoints. When a resource has no create endpoint, seed it directly into an isolated test database via the db helper — prefer building the row through the service's own model/factory so it matches production shape — and test its real creation path (webhook or callback) as that endpoint's own spec. Never add a test-only backdoor.
+- Isolate with `uniqueId`, not resets. Give each test uniquely-named data and assert only on what it created; never on global counts. Use a `beforeEach` reset only if the service exposes a test-only reset endpoint.
+- One endpoint per spec. One spec file per endpoint, named after it; a single top-level describe named "<METHOD> <path>"; one test per coverage-matrix row, named as a behavior statement. Each test body is Arrange / Act / Assert with a single call to the endpoint under test (a follow-up read to confirm a side effect is fine).
+- Keep setup in fixtures. All state creation goes through named helpers; never inline plumbing in a spec. Store access is confined to the db helper and used only to seed.
+- Match the templates. Follow their layout, naming, and assertion helpers so every suite reads the same.
 
-## Template files (read before scaffolding)
+## Template files
 
-- templates/playwright.config.ts.txt — runner config; base URL from env, serial workers.
+- templates/playwright.config.ts.txt — runner config; base URL from env, serial workers, optional `webServer`.
 - templates/helpers/client.ts.txt — base URL, the `uniqueId` generator, authed request-context factory.
-- templates/helpers/assertions.ts.txt — the `expectOk`, `expectStatus`, and `expectErrorCode` helpers.
-- templates/helpers/fixtures.ts.txt — example API-driven builders (`createUser`, `loginAs`) to adapt.
-- templates/example-create.spec.ts.txt — collection create endpoint spec; carries the canonical structure doc.
-- templates/example-detail.spec.ts.txt — item read endpoint spec (authz and unknown-id cases).
+- templates/helpers/assertions.ts.txt — `expectOk`, `expectStatus`, `expectErrorCode`.
+- templates/helpers/fixtures.ts.txt — example builders (`createUser`, `loginAs`, and a db-seed example).
+- templates/helpers/db.ts.txt — OPTIONAL isolated-test-DB access; only for seeding resources with no create endpoint.
+- templates/example-create.spec.ts.txt — create endpoint spec; carries the canonical structure doc.
+- templates/example-detail.spec.ts.txt — item read endpoint spec (authz, unknown-id).
 - templates/example-delete.spec.ts.txt — item delete endpoint spec (side-effect read, idempotency).
 
 ## Layout
 
-- Put the suite under a top-level tests directory in the target service repo.
-- It holds the Playwright config, a helpers directory (client, assertions, fixtures), and one spec file per endpoint.
-- Name each spec file after its endpoint (e.g. resource-create.spec.ts, resource-detail.spec.ts, resource-delete.spec.ts).
-- Each spec has a single top-level describe named for the HTTP method and path.
+- Put the suite under a top-level tests directory in the target repo: the Playwright config, a helpers directory, and one spec file per endpoint.
+- Name each spec after its endpoint (e.g. resource-create.spec.ts, resource-detail.spec.ts).
 
 ## Setup workflow
 
-1. Add the Playwright test package as a devDependency.
-2. Copy the templates into the target repo's tests directory, dropping the `.txt` suffix; set the base-URL environment variable (or edit the default in client and config).
-3. Adapt the fixtures module to the service's real create and login endpoints.
-4. Adapt the assertions module's error-code helper to the service's error envelope shape (the envelope path is service-specific — e.g. body.error.code versus body.code).
-5. Add a test script that runs Playwright.
-6. Write the first spec against the service's auth or entry surface.
-7. Run the suite against a running instance and confirm it passes.
+1. Add the Playwright test package as a devDependency and a script that runs it.
+2. Copy the templates in, dropping the `.txt` suffix, and set the base-URL env var (or edit the default).
+3. Adapt the fixtures to the service's real create/login endpoints and the error-code helper to its envelope shape (service-specific — e.g. body.error.code vs body.code). Only if a resource has no create endpoint, copy the db helper and point TEST_DATABASE_URL at an isolated test database.
+4. Write the first spec against the auth or entry surface, then run it against a running instance and confirm it passes.
 
-The service under test is a black box: run it however the repo already does (dev command, container, deployed instance) and point the base-URL variable at it. Do not stand up databases or migrations inside this suite — that is the service's job.
-
-For local runs, prefer letting Playwright boot the service via the config's `webServer` block (against a deployed or CI-provisioned instance, point the base-URL variable at it and leave `webServer` off). When `webServer` injects a test environment (for example a test database URL), set those variables before the service's own dotenv loader runs — otherwise a dev `.env` can leak into the test process and quietly point the suite at the wrong store.
-
-## Spec conventions
-
-- Import only from the helpers modules. Never touch app internals or a database.
-- Follow the canonical structure in the example specs exactly, so every suite reads the same. File → exactly one endpoint, named after it. Describe → a single top-level block named "<METHOD> <path>"; never mix endpoints. Test → one coverage-matrix row.
-- Structure every test body as Arrange / Act / Assert: seed state through fixtures, make a single call to the endpoint under test, then assert. Do not exercise a second endpoint except as the follow-up read that confirms a side effect.
-- Cover the matrix rows that apply to the endpoint; not all apply to each (a collection POST has no 404; an item GET has no 422).
-- Seed via fixtures (API calls); namespace created entities with `uniqueId` for isolation. Add a reset hook only if the service exposes a test-only reset endpoint.
-- Name tests as behavior statements: what happens under what condition (e.g. rejects a wager that exceeds the balance; requires authentication).
-- Attach auth per-request with a bearer authorization header, or use the authed-context factory for a token-preset context.
-- Assert the full outcome: status code, body shape, and any side effect verified via a follow-up API read (never a database peek).
-
-## Seeding resources with no direct create endpoint
-
-Some resources have no create endpoint — they come into existence only through an external-provider callback, an inbound webhook, or another internal flow (e.g. a Plaid item created by a provider webhook, then a token exchange, then a store write). Do not reach into the store to fake them, and do not add a test-only backdoor endpoint. Instead, drive the real inbound surface that creates them. This keeps the suite black-box and exercises the true write path, so it still catches write-path bugs.
-
-- Find the inbound surface. Identify the HTTP entry point that triggers creation — the webhook receiver, the OAuth/token-exchange callback, the provider redirect handler. That endpoint is part of the service's public surface; treat it like any other endpoint under test.
-- Send a representative payload. POST the event body the provider would send. Model it on the provider's documented webhook schema (or a captured sandbox event), including the fields the handler reads to route and persist the resource.
-- Handle verification honestly. If the receiver verifies a provider signature or shared secret, satisfy it the way the provider's sandbox does — compute the real signature with the test secret, or run the service in the provider's sandbox mode. Never disable verification with a test-only bypass; that changes the code path under test.
-- Chain multi-step flows. When creation spans several calls (exchange a public token, then deliver a webhook that references it), reproduce the sequence in a fixture so the resource lands through the same path the real provider drives.
-- Verify through the API. After seeding this way, assert the resource with a follow-up API read, exactly as for any happy path. Wrap the whole sequence in a named fixture (see the webhook seeding example in the fixtures template); never inline it in a spec.
+Run the service however the repo already does and point the base-URL variable at it; do not stand up databases or migrations inside the suite. For local runs, prefer booting via the config's `webServer` block — and when it injects a test env (e.g. a test DATABASE_URL), set those vars before the service's own dotenv loader runs, or a dev `.env` can leak in and point the suite at the wrong store.
 
 ## Coverage matrix (per endpoint)
 
-- Happy path: valid input returns the right status and body; a follow-up read reflects the change. If the resource has no create endpoint, seed it by driving its real inbound surface (see "Seeding resources with no direct create endpoint") before asserting the read.
-- Validation: malformed or invalid input returns the validation status (typically 422) and the expected error code.
+Cover the rows that apply to the endpoint; not all apply to each (a collection POST has no 404; an item GET has no 422).
+
+- Happy path: valid input returns the right status and body; a follow-up read reflects the change.
+- Validation: malformed input returns the validation status (typically 422) and the expected error code.
 - Boundaries: at-limit values — exactly equal, one over, zero or empty.
 - Authz/authn: unauthenticated (401) and forbidden or not-owner (403).
 - State conflicts: wrong-state resources (409) and unknown IDs (404).
@@ -90,15 +63,12 @@ Some resources have no create endpoint — they come into existence only through
 
 ## CI integration
 
-- Run the suite as a required status check on pull requests to the protected branch; block merge on failure.
-- Point the base-URL variable at the service instance the pipeline brings up.
-- Bringing up the service and its dependencies (database, migrations, containers, seed data) is the service's responsibility, invoked from the pipeline — never from inside the suite. Mirror whatever the repo already does to boot the service.
-- Keep the black-box contract in CI too: the pipeline may provision the service's backing store, but the suite still talks to the service over HTTP only and never touches that store.
-- For the concrete pipeline, branch-protection, and merge-gating mechanics, use the ci-merge-gating skill.
+- Run the suite as a required PR check that blocks merge on failure — see the ci-merge-gating skill for the mechanics.
+- Point the base-URL at the instance the pipeline boots; provisioning the service and its store is the pipeline's job, not the suite's.
+- Verify only over HTTP in CI; if a spec seeds directly, point the db helper at that same isolated store.
 
 ## Expanding the suite
 
-- New endpoint: add a new spec file named for that endpoint and walk the coverage matrix.
-- New entity: add an API builder to the fixtures module; never inline the plumbing in a spec.
-- New error code: assert it with the error-code helper; keep envelope handling in the helper.
-- New auth scheme: adapt the authed-context factory and login helper only.
+- New endpoint: add a spec file named for it and walk the coverage matrix.
+- New entity: add a fixture builder (API-driven, or a db seed if it has no create endpoint).
+- New error code or auth scheme: adapt the relevant helper only.

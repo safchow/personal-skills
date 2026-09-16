@@ -1,15 +1,16 @@
 import { type APIRequestContext } from '@playwright/test'
 import { uniqueId } from './client.js'
 import { expectOk } from './assertions.js'
+import { testDb } from './db.js'
 
 /**
  * Entity builders and interaction helpers. Every piece of test setup goes
- * through a named function here — never inline API plumbing in a spec.
+ * through a named function here — never inline plumbing in a spec.
  *
- * CRITICAL: all state is created THROUGH THE API, never by writing to a
- * database. This keeps the suite portable across any backing store and honors
- * the black-box contract. Namespace new entities with `uniqueId()` so tests
- * stay isolated without a shared reset.
+ * Prefer creating state THROUGH THE API. Only when a resource has no create
+ * endpoint, seed it directly via the db helper (see `seedResource` below and
+ * SKILL.md). Namespace new entities with `uniqueId()` so tests stay isolated
+ * without a shared reset. Verification always happens over HTTP.
  *
  * The functions below are EXAMPLES. Rename/replace the endpoints and payloads
  * to match the service under test, but keep the pattern:
@@ -64,23 +65,25 @@ export async function createAuthedUser(
 }
 
 /**
- * EXAMPLE: seed a resource that has no direct create endpoint by driving the
- * real inbound surface — here, simulating an external-provider webhook. This
- * stays black-box (HTTP only) and exercises the service's real write path, so
- * it catches write-path bugs. Verify the outcome afterwards with an API read.
+ * EXAMPLE: seed a resource that has NO create endpoint, so its read endpoints
+ * can be tested. This is the ONLY place setup touches the store, and it goes
+ * through the db helper. Verification still happens over HTTP.
  *
- * ADAPT the endpoint and payload to the service's webhook contract. If the
- * receiver verifies a provider signature, satisfy it the way the provider's
- * sandbox does (compute the real signature with the test secret) rather than
- * bypassing verification, so the true write path stays under test. For
- * multi-step flows, chain the calls the provider would make (see SKILL.md).
+ * ADAPT: prefer building the row through the service's own model/factory (import
+ * it if the repo exposes one) so the seed matches the real write path's shape.
+ * Only hand-build fields when nothing is importable — and know the row may then
+ * drift from production data. Cover the true write path (the webhook/callback
+ * that really creates this resource) in that endpoint's own spec.
  */
-export async function seedViaWebhook(
-  request: APIRequestContext,
-  event: Record<string, unknown>,
-): Promise<void> {
-  const res = await request.post('/api/webhooks/<provider>', { data: event })
-  await expectOk(res)
+export async function seedResource(
+  overrides: Partial<{ id: string; name: string; ownerId: string }> = {},
+): Promise<{ id: string; ownerId: string }> {
+  const id = overrides.id ?? uniqueId('resource')
+  const ownerId = overrides.ownerId ?? uniqueId('owner')
+  await testDb().resource.create({ // ADAPT: table/model + client API
+    data: { id, ownerId, name: overrides.name ?? `Test ${id}` },
+  })
+  return { id, ownerId }
 }
 
 /**

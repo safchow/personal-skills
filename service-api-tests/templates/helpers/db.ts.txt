@@ -1,0 +1,34 @@
+/**
+ * OPTIONAL — isolated test-database access, for SEEDING ONLY.
+ *
+ * Copy this helper only if a resource has no create endpoint and must be seeded
+ * directly (see SKILL.md, "Seeding resources with no create endpoint"). All
+ * store access lives here — specs and other fixtures never import a DB client
+ * directly. Never assert by reading here; verification always happens over HTTP.
+ *
+ * ADAPT to the service's stack: swap the client below for the repo's ORM/driver.
+ * Prefer seeding through the service's own model/factory/serializer (import it
+ * if the repo exposes one) so seeded rows match the real write path's shape.
+ */
+import { PrismaClient } from '@prisma/client' // ADAPT: the repo's DB client
+
+let client: PrismaClient | undefined
+
+/**
+ * Lazily-created singleton bound to the ISOLATED test database. Refuses to run
+ * without an explicit TEST_DATABASE_URL so it can never touch dev or prod.
+ */
+export function testDb(): PrismaClient {
+  const url = process.env.TEST_DATABASE_URL
+  if (!url) {
+    throw new Error('TEST_DATABASE_URL is not set — refusing to open a store connection.')
+  }
+  client ??= new PrismaClient({ datasources: { db: { url } } })
+  return client
+}
+
+/** Call from a Playwright globalTeardown so the client does not hang the process. */
+export async function disconnectDb(): Promise<void> {
+  await client?.$disconnect()
+  client = undefined
+}
