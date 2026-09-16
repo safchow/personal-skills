@@ -30,16 +30,15 @@ Templates ship as raw text with a `.txt` suffix so no compiler or linter reads t
 ## Template files (read before scaffolding)
 
 - templates/playwright.config.ts.txt — runner config; base URL from env, serial workers.
-- templates/e2e/helpers/client.ts.txt — base URL, the `uniqueId` generator, authed request-context factory.
-- templates/e2e/helpers/assertions.ts.txt — the `expectOk`, `expectStatus`, and `expectErrorCode` helpers.
-- templates/e2e/helpers/fixtures.ts.txt — example API-driven builders (`createUser`, `loginAs`) to adapt.
-- templates/e2e/example.spec.ts.txt — spec showing the required shape and coverage.
+- templates/helpers/client.ts.txt — base URL, the `uniqueId` generator, authed request-context factory.
+- templates/helpers/assertions.ts.txt — the `expectOk`, `expectStatus`, and `expectErrorCode` helpers.
+- templates/helpers/fixtures.ts.txt — example API-driven builders (`createUser`, `loginAs`) to adapt.
+- templates/example.spec.ts.txt — spec showing the required shape and coverage.
 
 ## Layout
 
 - Put the suite under a top-level tests directory in the target service repo.
-- It holds the Playwright config plus an e2e directory.
-- Inside e2e: a helpers directory (client, assertions, fixtures) plus one spec file per resource or API surface.
+- It holds the Playwright config, a helpers directory (client, assertions, fixtures), and one spec file per resource or API surface.
 - Group related endpoints in a describe block named for the HTTP method and path.
 
 ## Setup workflow
