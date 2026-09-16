@@ -1,49 +1,74 @@
 import { expect, test } from '@playwright/test'
 import { bearer } from './helpers/client.js'
 import { expectErrorCode, expectStatus } from './helpers/assertions.js'
-import { TEST_PASSWORD, createUser, loginAs } from './helpers/fixtures.js'
+import { createAuthedUser } from './helpers/fixtures.js'
 
 /**
- * EXAMPLE spec showing the required shape. Copy this per resource, rename the
- * describe blocks to the real endpoints, and walk the coverage matrix from
- * SKILL.md: happy path, validation, boundaries, authz/authn, state conflicts,
- * idempotency.
+ * CANONICAL SPEC STRUCTURE — copy this shape for every resource.
  *
- * Note: no beforeEach reset — isolation comes from uniqueId()-namespaced data
- * created via the API. Add `await resetIfAvailable(request)` only if the service
- * offers a test-reset endpoint.
+ * File: one spec file per resource (or per endpoint for large resources).
+ * Suite: ONE describe block per endpoint, named exactly "<METHOD> <path>".
+ *        Never mix endpoints in one describe — GET/POST/DELETE each get their own.
+ * Test:  one test per coverage-matrix row (SKILL.md), named as a behavior
+ *        statement. Each test body follows Arrange / Act / Assert:
+ *          Arrange — seed state through fixtures (API calls), namespaced by uniqueId().
+ *          Act     — a SINGLE call to the endpoint under test.
+ *          Assert  — status code, body shape, and side effects via a follow-up API read.
+ *
+ * Not every matrix row applies to every endpoint (a collection POST has no 404;
+ * an item GET has no 422). Cover the rows that apply to THIS endpoint.
+ *
+ * Isolation: no beforeEach reset — each test creates its own uniqueId()-namespaced
+ * data. Add `await resetIfAvailable(request)` only if the service offers a reset.
  */
 
+// ---------------------------------------------------------------------------
+// Collection endpoint: create. Matrix rows: happy, validation, boundary,
+// authn, idempotency/side-effects.
+// ---------------------------------------------------------------------------
 test.describe('POST /api/<resource>', () => {
-  test('creates the resource and a follow-up read reflects it (happy path)', async ({
-    request,
-  }) => {
-    const user = await createUser(request)
-    const { token } = await loginAs(request, user.username, TEST_PASSWORD)
+  test('creates the resource and a follow-up read reflects it', async ({ request }) => {
+    // Arrange
+    const { token } = await createAuthedUser(request)
 
+    // Act
     const res = await request.post('/api/<resource>', {
       headers: bearer(token),
       data: { name: 'example', amount: 25 },
     })
-    expect(res.status()).toBe(201)
+
+    // Assert: status, body, then the side effect through the API (never a DB read).
+    await expectStatus(res, 201)
     const created = (await res.json()).resource
     expect(created).toMatchObject({ name: 'example', amount: 25 })
 
-    // Verify the side effect through the API, never a DB read.
     const read = await request.get(`/api/<resource>/${created.id}`, {
       headers: bearer(token),
     })
+    await expectStatus(read, 200)
     expect((await read.json()).resource).toMatchObject({ id: created.id })
   })
 
   test('rejects invalid input with a validation error (422)', async ({ request }) => {
-    const user = await createUser(request)
-    const { token } = await loginAs(request, user.username, TEST_PASSWORD)
+    const { token } = await createAuthedUser(request)
 
     const res = await request.post('/api/<resource>', {
       headers: bearer(token),
       data: { name: '', amount: -1 },
     })
+
+    await expectStatus(res, 422)
+    await expectErrorCode(res, 'E_VALIDATION')
+  })
+
+  test('rejects an amount of zero at the lower boundary (422)', async ({ request }) => {
+    const { token } = await createAuthedUser(request)
+
+    const res = await request.post('/api/<resource>', {
+      headers: bearer(token),
+      data: { name: 'edge', amount: 0 },
+    })
+
     await expectStatus(res, 422)
     await expectErrorCode(res, 'E_VALIDATION')
   })
@@ -52,33 +77,88 @@ test.describe('POST /api/<resource>', () => {
     const res = await request.post('/api/<resource>', {
       data: { name: 'example', amount: 25 },
     })
-    expect(res.status()).toBe(401)
-  })
 
-  test('forbids acting on another user\u2019s resource (403)', async ({ request }) => {
-    const owner = await createUser(request)
-    const ownerAuth = await loginAs(request, owner.username, TEST_PASSWORD)
+    await expectStatus(res, 401)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Item endpoint: read one. Matrix rows: happy, authn, authz/not-owner,
+// unknown id.
+// ---------------------------------------------------------------------------
+test.describe('GET /api/<resource>/:id', () => {
+  test('returns the resource to its owner', async ({ request }) => {
+    const { token } = await createAuthedUser(request)
     const created = await request.post('/api/<resource>', {
-      headers: bearer(ownerAuth.token),
+      headers: bearer(token),
       data: { name: 'owned', amount: 10 },
     })
     const id = (await created.json()).resource.id
 
-    const intruder = await createUser(request)
-    const intruderAuth = await loginAs(request, intruder.username, TEST_PASSWORD)
-    const res = await request.delete(`/api/<resource>/${id}`, {
-      headers: bearer(intruderAuth.token),
+    const res = await request.get(`/api/<resource>/${id}`, { headers: bearer(token) })
+
+    await expectStatus(res, 200)
+    expect((await res.json()).resource).toMatchObject({ id })
+  })
+
+  test('requires authentication (401)', async ({ request }) => {
+    const res = await request.get('/api/<resource>/anything')
+    await expectStatus(res, 401)
+  })
+
+  test('forbids reading another user\u2019s resource (403)', async ({ request }) => {
+    const owner = await createAuthedUser(request)
+    const created = await request.post('/api/<resource>', {
+      headers: bearer(owner.token),
+      data: { name: 'owned', amount: 10 },
     })
+    const id = (await created.json()).resource.id
+
+    const intruder = await createAuthedUser(request)
+    const res = await request.get(`/api/<resource>/${id}`, { headers: bearer(intruder.token) })
+
     await expectStatus(res, 403)
     await expectErrorCode(res, 'E_FORBIDDEN')
   })
 
   test('404s for an unknown id', async ({ request }) => {
-    const user = await createUser(request)
-    const { token } = await loginAs(request, user.username, TEST_PASSWORD)
-    const res = await request.get('/api/<resource>/does_not_exist', {
+    const { token } = await createAuthedUser(request)
+    const res = await request.get('/api/<resource>/does_not_exist', { headers: bearer(token) })
+    await expectStatus(res, 404)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Item endpoint: delete. Matrix rows: happy, authz, unknown id, state
+// conflict, idempotency.
+// ---------------------------------------------------------------------------
+test.describe('DELETE /api/<resource>/:id', () => {
+  test('deletes the resource so a follow-up read 404s', async ({ request }) => {
+    const { token } = await createAuthedUser(request)
+    const created = await request.post('/api/<resource>', {
       headers: bearer(token),
+      data: { name: 'temp', amount: 5 },
     })
-    expect(res.status()).toBe(404)
+    const id = (await created.json()).resource.id
+
+    const res = await request.delete(`/api/<resource>/${id}`, { headers: bearer(token) })
+    await expectStatus(res, 204)
+
+    // Side effect confirmed through the API.
+    const read = await request.get(`/api/<resource>/${id}`, { headers: bearer(token) })
+    await expectStatus(read, 404)
+  })
+
+  test('is idempotent: deleting an already-deleted resource 404s', async ({ request }) => {
+    const { token } = await createAuthedUser(request)
+    const created = await request.post('/api/<resource>', {
+      headers: bearer(token),
+      data: { name: 'temp', amount: 5 },
+    })
+    const id = (await created.json()).resource.id
+    await request.delete(`/api/<resource>/${id}`, { headers: bearer(token) })
+
+    const res = await request.delete(`/api/<resource>/${id}`, { headers: bearer(token) })
+    await expectStatus(res, 404)
   })
 })

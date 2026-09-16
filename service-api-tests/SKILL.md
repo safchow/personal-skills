@@ -58,8 +58,10 @@ For local runs, prefer letting Playwright boot the service via the config's `web
 ## Spec conventions
 
 - Import only from the helpers modules. Never touch app internals or a database.
+- Follow the canonical structure in the example spec exactly, so every suite reads the same. File → one resource (or one endpoint for large resources). Describe → exactly one endpoint, named "<METHOD> <path>"; never mix endpoints in a describe. Test → one coverage-matrix row.
+- Structure every test body as Arrange / Act / Assert: seed state through fixtures, make a single call to the endpoint under test, then assert. Do not exercise a second endpoint except as the follow-up read that confirms a side effect.
+- Cover the matrix rows that apply to the endpoint; not all apply to each (a collection POST has no 404; an item GET has no 422).
 - Seed via fixtures (API calls); namespace created entities with `uniqueId` for isolation. Add a reset hook only if the service exposes a test-only reset endpoint.
-- Group by endpoint with a describe named for the HTTP method and path; nest a further describe for a coherent cluster of cases.
 - Name tests as behavior statements: what happens under what condition (e.g. rejects a wager that exceeds the balance; requires authentication).
 - Attach auth per-request with a bearer authorization header, or use the authed-context factory for a token-preset context.
 - Assert the full outcome: status code, body shape, and any side effect verified via a follow-up API read (never a database peek).
