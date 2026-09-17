@@ -5,11 +5,14 @@ import { createAuthedUser } from './helpers/fixtures.js'
 
 /**
  * One endpoint per file (see example-create.spec.ts for the canonical structure).
- *
- * This file: the item delete endpoint. Matrix rows: happy (with side-effect
- * read), idempotency, unknown id.
+ * This file: the item delete endpoint.
  */
 test.describe('DELETE /api/<resource>/:id', () => {
+  test('requires authentication (401)', async ({ request }) => {
+    const res = await request.delete('/api/<resource>/anything')
+    await expectStatus(res, 401)
+  })
+
   test('deletes the resource so a follow-up read 404s', async ({ request }) => {
     // Arrange
     const { token } = await createAuthedUser(request)
@@ -39,10 +42,5 @@ test.describe('DELETE /api/<resource>/:id', () => {
 
     const res = await request.delete(`/api/<resource>/${id}`, { headers: bearer(token) })
     await expectStatus(res, 404)
-  })
-
-  test('requires authentication (401)', async ({ request }) => {
-    const res = await request.delete('/api/<resource>/anything')
-    await expectStatus(res, 401)
   })
 })

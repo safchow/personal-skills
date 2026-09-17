@@ -50,11 +50,16 @@ jobs:
         uses: actions/checkout@v4
 
       # PLACEHOLDER: set up the repo's toolchain (language runtime, package
-      # manager). Example uses Node; replace to match the repo.
+      # manager). Example uses Node; replace to match the repo. Keep action
+      # majors current — old majors (e.g. Node 20 actions) get deprecated.
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      # GOTCHA (pnpm): do not pin the version in BOTH package.json's
+      # "packageManager" field and here — the two conflict and fail the setup.
+      # Pin it in one place (prefer packageManager) and let the action read it.
 
       # PLACEHOLDER: deterministic, locked dependency install.
       - name: Install dependencies

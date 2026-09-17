@@ -35,3 +35,24 @@ export async function authedContext(token: string): Promise<APIRequestContext> {
 export function bearer(token: string): { authorization: string } {
   return { authorization: `Bearer ${token}` }
 }
+
+/**
+ * Some services authenticate with SESSION COOKIES, not bearer tokens. A normal
+ * cookie jar may not replay secure, cross-subdomain cookies over
+ * http://localhost, so capture the raw Set-Cookie header returned at login and
+ * replay it verbatim. Use these instead of `bearer`/`authedContext` in that case.
+ *
+ *   const login = await request.post('/api/auth/sign-in', { data: creds })
+ *   const setCookie = login.headers()['set-cookie']
+ *   const res = await request.get('/api/session', { headers: cookie(setCookie) })
+ */
+export function cookie(setCookie: string): { cookie: string } {
+  return { cookie: setCookie }
+}
+
+export async function cookieContext(setCookie: string): Promise<APIRequestContext> {
+  return playwrightRequest.newContext({
+    baseURL: BASE_URL,
+    extraHTTPHeaders: { cookie: setCookie, accept: 'application/json' },
+  })
+}

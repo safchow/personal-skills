@@ -5,11 +5,14 @@ import { createAuthedUser } from './helpers/fixtures.js'
 
 /**
  * One endpoint per file (see example-create.spec.ts for the canonical structure).
- *
- * This file: the item read endpoint. Matrix rows: happy, authn,
- * authz/not-owner, unknown id.
+ * This file: the item read endpoint.
  */
 test.describe('GET /api/<resource>/:id', () => {
+  test('requires authentication (401)', async ({ request }) => {
+    const res = await request.get('/api/<resource>/anything')
+    await expectStatus(res, 401)
+  })
+
   test('returns the resource to its owner', async ({ request }) => {
     // Arrange
     const { token } = await createAuthedUser(request)
@@ -25,11 +28,6 @@ test.describe('GET /api/<resource>/:id', () => {
     // Assert
     await expectStatus(res, 200)
     expect((await res.json()).resource).toMatchObject({ id })
-  })
-
-  test('requires authentication (401)', async ({ request }) => {
-    const res = await request.get('/api/<resource>/anything')
-    await expectStatus(res, 401)
   })
 
   test('forbids reading another user\u2019s resource (403)', async ({ request }) => {

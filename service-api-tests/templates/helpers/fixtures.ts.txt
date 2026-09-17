@@ -12,6 +12,10 @@ import { testDb } from './db.js'
  * SKILL.md). Namespace new entities with `uniqueId()` so tests stay isolated
  * without a shared reset. Verification always happens over HTTP.
  *
+ * As this file grows, split it into a resource-scoped `helpers/fixtures/`
+ * directory (auth.ts, items.ts, ...) behind a barrel index so specs import from
+ * one stable path.
+ *
  * The functions below are EXAMPLES. Rename/replace the endpoints and payloads
  * to match the service under test, but keep the pattern:
  *   - sensible defaults + a Partial<> overrides object

@@ -19,16 +19,18 @@ Templates ship as raw text with a `.txt` suffix so no compiler or linter reads t
 ## Rules (non-negotiable)
 
 - Verify only over HTTP. Assert on status codes, response bodies, and side effects confirmed by a follow-up API read. No app imports, no store peeks in assertions.
-- Seed through the service's endpoints. When a resource has no create endpoint, seed it directly into an isolated test database via the db helper — prefer building the row through the service's own model/factory so it matches production shape — and test its real creation path (webhook or callback) as that endpoint's own spec. Never add a test-only backdoor.
+- Attach auth the way the service issues it. Bearer header, or a session cookie captured at login and replayed verbatim — a normal cookie jar may not replay secure, cross-subdomain cookies over http://localhost. Confirm the mechanism before writing fixtures.
+- Seed through the service's endpoints. When a resource has no create endpoint, seed it directly into an isolated test database via the db helper — which must refuse to run unless TEST_DATABASE_URL is set — preferring the service's own model/factory so the row matches production shape; test its real creation path (webhook or callback) as that endpoint's own spec. Never add a test-only backdoor.
+- Borrow input types, not output types. For seed payloads, borrow types from the service's source of truth (e.g. its DB client) so inputs stay correct; assert responses against expected shapes, not the service's own DTOs, so contract drift is caught rather than absorbed.
 - Isolate with `uniqueId`, not resets. Give each test uniquely-named data and assert only on what it created; never on global counts. Use a `beforeEach` reset only if the service exposes a test-only reset endpoint.
-- One endpoint per spec. One spec file per endpoint, named after it; a single top-level describe named "<METHOD> <path>"; one test per coverage-matrix row, named as a behavior statement. Each test body is Arrange / Act / Assert with a single call to the endpoint under test (a follow-up read to confirm a side effect is fine).
-- Keep setup in fixtures. All state creation goes through named helpers; never inline plumbing in a spec. Store access is confined to the db helper and used only to seed.
+- One endpoint per spec. One spec file per endpoint, named after it; a single top-level describe named "<METHOD> <path>"; one test per behavior. Put the auth-gating (401) test first. Each test body is Arrange / Act / Assert with a single call to the endpoint under test (a follow-up read to confirm a side effect is fine).
+- Keep setup in fixtures. All state creation goes through named helpers; never inline plumbing in a spec. As fixtures grow, split them into a resource-scoped `helpers/fixtures/` directory behind a barrel. Store access is confined to the db helper and used only to seed.
 - Match the templates. Follow their layout, naming, and assertion helpers so every suite reads the same.
 
 ## Template files
 
 - templates/playwright.config.ts.txt — runner config; base URL from env, serial workers, optional `webServer`.
-- templates/helpers/client.ts.txt — base URL, the `uniqueId` generator, authed request-context factory.
+- templates/helpers/client.ts.txt — base URL, the `uniqueId` generator, and authed context factories (bearer or session-cookie).
 - templates/helpers/assertions.ts.txt — `expectOk`, `expectStatus`, `expectErrorCode`.
 - templates/helpers/fixtures.ts.txt — example builders (`createUser`, `loginAs`, and a db-seed example).
 - templates/helpers/db.ts.txt — OPTIONAL isolated-test-DB access; only for seeding resources with no create endpoint.
@@ -43,16 +45,23 @@ Templates ship as raw text with a `.txt` suffix so no compiler or linter reads t
 
 ## Setup workflow
 
-1. Add the Playwright test package as a devDependency and a script that runs it.
-2. Copy the templates in, dropping the `.txt` suffix, and set the base-URL env var (or edit the default).
-3. Adapt the fixtures to the service's real create/login endpoints and the error-code helper to its envelope shape (service-specific — e.g. body.error.code vs body.code). Only if a resource has no create endpoint, copy the db helper and point TEST_DATABASE_URL at an isolated test database.
-4. Write the first spec against the auth or entry surface, then run it against a running instance and confirm it passes.
+1. Discover the contracts first. Identify the auth mechanism (bearer vs. session cookie) and the error-envelope shape (e.g. body.code vs body.error.code vs { message }) by hitting the running service, before writing fixtures.
+2. Add the Playwright test package as a devDependency and a script that runs it.
+3. Copy the templates in, dropping the `.txt` suffix, and set the base-URL env var (or edit the default).
+4. Adapt the fixtures to the service's real create/login endpoints and the error-code helper to the envelope shape from step 1. Only if a resource has no create endpoint, copy the db helper and point TEST_DATABASE_URL at an isolated test database.
+5. Write the first spec against the auth or entry surface, then run it against a running instance and confirm it passes.
 
 Run the service however the repo already does and point the base-URL variable at it; do not stand up databases or migrations inside the suite. For local runs, prefer booting via the config's `webServer` block — and when it injects a test env (e.g. a test DATABASE_URL), set those vars before the service's own dotenv loader runs, or a dev `.env` can leak in and point the suite at the wrong store.
 
+## Scope: what to test
+
+- Product behavior only. Skip infrastructure endpoints (health, readiness, liveness) and generic framework defaults (method-not-allowed, generic routing 404s) unless they carry service-owned product logic.
+- Provider-proxying endpoints: cover the service-owned boundary that runs before the external call — authn and validation. Push real-integration happy paths (which hit the third party) to an opt-in sandbox suite, never the per-PR gate; optionally add a network-stub seam.
+- Deterministic offline flows: drive them end-to-end. When the service hands you what you need to complete a flow (e.g. a TOTP enrollment secret you can generate codes from), test the whole flow with no external calls. Reduce to the boundary only when a dependency genuinely cannot be reproduced offline (e.g. an asymmetric webhook signature you cannot forge).
+
 ## Coverage matrix (per endpoint)
 
-Cover the rows that apply to the endpoint; not all apply to each (a collection POST has no 404; an item GET has no 422).
+Cover the rows that apply to the endpoint; not all apply to each (a collection POST has no 404; an item GET has no 422). Descriptive test titles are the coverage record — do not maintain a separate matrix comment.
 
 - Happy path: valid input returns the right status and body; a follow-up read reflects the change.
 - Validation: malformed input returns the validation status (typically 422) and the expected error code.
