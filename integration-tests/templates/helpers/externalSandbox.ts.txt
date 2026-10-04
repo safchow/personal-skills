@@ -1,0 +1,89 @@
+/**
+ * External-dependency helpers for the integration suite (e.g. a provider
+ * sandbox). These live ONLY in the integration suite's helpers/ — shared
+ * helpers (auth, client, db, assertions) stay in shared/.
+ *
+ * ADAPT everything marked <provider>: the sandbox base URL, the mint endpoint,
+ * the credential env var names, and our own persist endpoint.
+ */
+import { type APIRequestContext } from '@playwright/test'
+import { expectStatus } from '../../../shared/assertions.js' // ADAPT path to shared/
+import { bearer } from '../../../shared/client.js' // ADAPT: bearer or cookie auth
+
+export const PROVIDER_SANDBOX_URL = 'https://sandbox.<provider>.com'
+
+export interface SandboxCredentials {
+  clientId: string
+  secret: string
+}
+
+/**
+ * Return sandbox credentials from env, or fail. REQUIRED-CHECK MODE (default):
+ * throw so a missing/misconfigured secret fails loudly instead of silently
+ * passing a suite that exercised nothing. Treat the dummy sentinel the service
+ * suite's CI uses (`ci-test`) as absent.
+ *
+ * OPTIONAL-CHECK MODE: replace the throw with
+ *   test.skip(true, 'PROVIDER_SANDBOX_* not set')
+ * (import `test` from '@playwright/test') to self-skip instead of fail.
+ */
+export function requireCredentials(): SandboxCredentials {
+  const clientId = process.env.PROVIDER_SANDBOX_CLIENT_ID
+  const secret = process.env.PROVIDER_SANDBOX_SECRET
+
+  if (!clientId || !secret || clientId === 'ci-test' || secret === 'ci-test') {
+    throw new Error(
+      'PROVIDER_SANDBOX_CLIENT_ID / PROVIDER_SANDBOX_SECRET are required to run ' +
+        'the integration suite. Set them in the environment (or, in CI, as secrets).',
+    )
+  }
+
+  return { clientId, secret }
+}
+
+/**
+ * Mint a one-shot provider token directly against the sandbox API. The token is
+ * consumed on exchange and can only be used once — mint a FRESH one per attempt.
+ */
+export async function mintProviderToken(creds: SandboxCredentials): Promise<string> {
+  const res = await fetch(`${PROVIDER_SANDBOX_URL}/sandbox/token/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: creds.clientId, secret: creds.secret }),
+  })
+
+  if (!res.ok) {
+    throw new Error(`Provider sandbox mint failed (${res.status}): ${await res.text()}`)
+  }
+  const data = (await res.json()) as { token?: string }
+  if (!data.token) throw new Error('Provider sandbox response had no token')
+  return data.token
+}
+
+export interface CreatedResource {
+  /** Our internal resource id (what downstream endpoints take). */
+  id: string
+}
+
+/**
+ * End-to-end: mint a sandbox token, exchange it through OUR create endpoint, and
+ * return the resulting id. Used by specs that need a persisted external-backed
+ * resource before exercising a downstream endpoint.
+ *
+ * Fresh resource per test — slower than a shared fixture, but a single failure
+ * is debuggable without reconstructing shared state.
+ */
+export async function createExternalResource(
+  request: APIRequestContext,
+  token: string, // ADAPT: auth credential (bearer token or session cookie)
+  creds: SandboxCredentials,
+): Promise<CreatedResource> {
+  const providerToken = await mintProviderToken(creds)
+  const res = await request.post('/api/<resource>', {
+    headers: bearer(token),
+    data: { providerToken },
+  })
+  await expectStatus(res, 201)
+  const body = (await res.json()) as { data: { id: string } }
+  return { id: body.data.id }
+}

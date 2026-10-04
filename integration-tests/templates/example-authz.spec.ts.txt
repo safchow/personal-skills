@@ -1,0 +1,38 @@
+import { test } from '@playwright/test'
+import { expectStatus } from '../../../shared/assertions.js'
+import { bearer } from '../../../shared/client.js'
+import { testDb } from '../../../shared/db.js'
+import { createAuthedUser } from '../../../shared/fixtures/index.js'
+import { createExternalResource, requireCredentials } from '../helpers/externalSandbox.js'
+
+/**
+ * EXAMPLE: authz on a REAL external-backed resource. The owner creates a resource
+ * via the sandbox round-trip; an intruder must be rejected on a downstream
+ * endpoint that operates on it.
+ *
+ * DB-read-for-setup: this downstream endpoint takes the provider's EXTERNAL id,
+ * which the DTO intentionally hides. Reading that one field from the test DB for
+ * setup is in-scope (the suite already seeds via the DB); writes still go over
+ * HTTP, and the assertion is still over HTTP.
+ */
+test.describe('POST /api/<resource>/:id/<action> (sandbox)', () => {
+  test('rejects an intruder acting on another user\u2019s resource (401)', async ({
+    request,
+  }) => {
+    const creds = requireCredentials()
+    const owner = await createAuthedUser(request)
+    const intruder = await createAuthedUser(request)
+    const { id } = await createExternalResource(request, owner.token, creds)
+
+    // Setup-only read of a hidden external id the endpoint requires.
+    const persisted = await testDb().resource.findUniqueOrThrow({
+      where: { id },
+      select: { externalId: true },
+    })
+
+    const res = await request.post(`/api/<resource>/${persisted.externalId}/<action>`, {
+      headers: bearer(intruder.token),
+    })
+    await expectStatus(res, 401)
+  })
+})

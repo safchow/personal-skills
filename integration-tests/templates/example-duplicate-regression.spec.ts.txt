@@ -1,0 +1,51 @@
+import { expect, test } from '@playwright/test'
+import { expectOk, expectStatus } from '../../../shared/assertions.js'
+import { bearer } from '../../../shared/client.js'
+import { createAuthedUser } from '../../../shared/fixtures/index.js'
+import { mintProviderToken, requireCredentials } from '../helpers/externalSandbox.js'
+
+/**
+ * EXAMPLE: duplicate / short-circuit path, with FRESH-TOKEN AS A REGRESSION GUARD.
+ *
+ * The service should detect the duplicate and short-circuit (here, 409) BEFORE
+ * exchanging the second token. We mint a genuinely fresh second token so that if
+ * the code ever regresses and takes the long path, the exchange would actually
+ * succeed — making this test fail correctly (201 instead of 409) instead of
+ * passing on a token that would have failed anyway.
+ */
+test.describe('POST /api/<resource> (sandbox)', () => {
+  test('short-circuits a duplicate without exchanging the second token', async ({
+    request,
+  }) => {
+    const creds = requireCredentials()
+    const { token } = await createAuthedUser(request)
+
+    // First create succeeds.
+    const firstToken = await mintProviderToken(creds)
+    const firstRes = await request.post('/api/<resource>', {
+      headers: bearer(token),
+      data: { providerToken: firstToken },
+    })
+    await expectStatus(firstRes, 201)
+    const first = (await firstRes.json()).data as { id: string }
+
+    // Second attempt with a FRESH token: must short-circuit before exchange.
+    const secondToken = await mintProviderToken(creds)
+    const dupeRes = await request.post('/api/<resource>', {
+      headers: bearer(token),
+      data: { providerToken: secondToken },
+    })
+    await expectStatus(dupeRes, 409)
+    const dupe = (await dupeRes.json()).data as { id: string; duplicate: boolean }
+    expect(dupe.duplicate).toBe(true)
+    expect(dupe.id).toBe(first.id)
+
+    // No second resource was created.
+    const listRes = await request.get('/api/<resource>', { headers: bearer(token) })
+    await expectOk(listRes)
+    const ids = ((await listRes.json()).data.items as Array<{ id: string }>).filter(
+      (i) => i.id === first.id,
+    )
+    expect(ids).toHaveLength(1)
+  })
+})

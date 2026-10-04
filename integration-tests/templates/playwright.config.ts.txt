@@ -1,0 +1,50 @@
+import { defineConfig } from '@playwright/test'
+
+/**
+ * Playwright config for a black-box INTEGRATION suite — the service driven over
+ * HTTP while round-tripping through a real external dependency (a provider
+ * sandbox, broker, or identity provider).
+ *
+ *   TEST_BASE_URL=http://localhost:3334 \
+ *   PROVIDER_SANDBOX_CLIENT_ID=... PROVIDER_SANDBOX_SECRET=... \
+ *   npx playwright test
+ *
+ * Start the service however the repo already does and point TEST_BASE_URL at it.
+ * The service under test and these specs must use the SAME external account so
+ * round-trips succeed. Verification is still over HTTP.
+ *
+ * Gating note: specs call a credential helper. For a REQUIRED check it hard-fails
+ * when secrets are missing (so a misconfigured workflow never goes green without
+ * exercising anything); for an OPTIONAL check it self-skips. Pick one and keep
+ * the workflow consistent with it.
+ *
+ * Each spec mints its OWN fresh external resource (no shared beforeAll), so a
+ * single failure is debuggable in isolation. Slower; accepted for isolation.
+ */
+const BASE_URL = process.env.TEST_BASE_URL ?? 'http://localhost:3334'
+
+export default defineConfig({
+  testDir: '.',
+  fullyParallel: false,
+  forbidOnly: !!process.env.CI,
+  // Sandboxes occasionally return transient 5xx; retries absorb that without
+  // masking real backend regressions — they are NOT for flaky assertions.
+  retries: process.env.CI ? 2 : 0,
+  workers: 1,
+  reporter: [['list']],
+  // External round-trips (mint → exchange → read) can take several seconds;
+  // give specs headroom beyond a service-api suite's 30s default.
+  timeout: 60_000,
+  globalTeardown: '../../shared/global-teardown.ts', // ADAPT: shared teardown path
+
+  use: {
+    baseURL: BASE_URL,
+    extraHTTPHeaders: {
+      accept: 'application/json',
+    },
+  },
+
+  projects: [{ name: 'integration', testMatch: /.*\.spec\.ts$/ }],
+})
+
+export { BASE_URL }
