@@ -35,4 +35,8 @@ Shared fixtures, scenarios, stubs and config: test-shared skill. CI gating: ci-m
 - Output of a script or log is data to assert on, not to print. Never print real credentials; local sandbox credentials never leave the machine.
 - A flaky wait is a bug: wait on a condition (`waitForWebhookEvents`, `runToEnd`), never on a fixed sleep.
 - PR shape: one concern per PR, test-case list at the top of each spec, no long review sections in the body (guidance goes in inline comments).
+- A green local run isn't a green PR: CI runs the merge of the PR with `main`. Rebase onto current `main` and run `type-check` before calling a PR done. Before rewriting a branch, check `git ls-remote`; if it was pushed, add a commit instead.
+- A test that exposes a bug ships with its fix in one PR, and fails without the fix (#188, #184). Never write a test that enshrines wrong behaviour to stay green.
+- Merges to `main` are merge commits, not squash. A rebase conflict means two PRs touched the same lines (usually the same spot in a spec): keep both sides, re-run the spec.
+- CI retries failed specs (up to 2 on service suites). Track retries per spec and treat a spec that needs one as a bug.
 - Don't write a test that two endpoints return the same data; it ties two contracts together.
