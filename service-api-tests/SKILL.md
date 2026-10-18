@@ -56,7 +56,7 @@ Run the service however the repo already does and point the base-URL variable at
 ## Scope: what to test
 
 - Product behavior only. Skip infrastructure endpoints (health, readiness, liveness) and generic framework defaults (method-not-allowed, generic routing 404s) unless they carry service-owned product logic.
-- Provider-proxying endpoints: cover the service-owned boundary that runs before the external call — authn and validation. Push real-integration happy paths (which hit the third party) to an opt-in sandbox suite, never the per-PR gate; optionally add a network-stub seam.
+- Provider-proxying endpoints: cover the service-owned boundary that runs before the external call — authn and validation. Push real-integration happy paths (which hit the third party) to an opt-in sandbox suite (see the integration-tests skill), never the per-PR gate; optionally add a network-stub seam.
 - Deterministic offline flows: drive them end-to-end. When the service hands you what you need to complete a flow (e.g. a TOTP enrollment secret you can generate codes from), test the whole flow with no external calls. Reduce to the boundary only when a dependency genuinely cannot be reproduced offline (e.g. an asymmetric webhook signature you cannot forge).
 
 ## Coverage matrix (per endpoint)

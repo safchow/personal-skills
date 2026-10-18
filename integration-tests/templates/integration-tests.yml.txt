@@ -1,0 +1,79 @@
+# Integration suite: drives the service plus a REAL external dependency.
+#
+# This workflow is a SKELETON. Steps marked PLACEHOLDER are repo-specific.
+# Separate from the service-api gate: this one needs real external credentials,
+# runs slower, and also runs on a schedule.
+#
+# Merge gating requires TWO things (see the ci-merge-gating skill):
+#   1. this workflow running the check, AND
+#   2. branch protection marking the job below (by name) as a required status
+#      check. Register it via the ruleset API (full ruleset body, not a patch).
+#
+# Gating vs. credentialing: because this is a REQUIRED check, the credential
+# helper HARD-FAILS when secrets are missing — a misconfigured run fails loudly
+# instead of going green without exercising anything. Do NOT fall back to dummy
+# credentials here.
+
+name: Integration Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: '0 7 * * *' # nightly: catch regressions on days with no PR traffic
+  workflow_dispatch: {}  # manual re-run after an external outage
+
+permissions:
+  contents: read
+
+jobs:
+  # Branch protection matches this job by NAME. Keep it stable.
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # PLACEHOLDER: provision dependencies the service needs (e.g. a database).
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app_dev
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d app_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_BASE_URL: http://localhost:3334
+      # Real external credentials, no dummy fallback. The service under test and
+      # the test helper must point at the SAME external account.
+      PROVIDER_SANDBOX_CLIENT_ID: ${{ secrets.PROVIDER_SANDBOX_CLIENT_ID }}
+      PROVIDER_SANDBOX_SECRET: ${{ secrets.PROVIDER_SANDBOX_SECRET }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      # PLACEHOLDER: toolchain. Keep action majors current.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # PLACEHOLDER: deterministic install (and migrations / service boot).
+      - name: Install dependencies
+        run: '<install command, e.g. "npm ci">'
+
+      # PLACEHOLDER: provision and boot the service with the SAME external creds.
+      - name: Provision and boot
+        run: '<provision + start commands, or delete>'
+
+      - name: Run integration suite
+        run: npx playwright test

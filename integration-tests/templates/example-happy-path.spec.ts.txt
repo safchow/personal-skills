@@ -1,0 +1,38 @@
+import { expect, test } from '@playwright/test'
+import { expectOk, expectStatus } from '../../../shared/assertions.js'
+import { bearer } from '../../../shared/client.js'
+import { createAuthedUser } from '../../../shared/fixtures/index.js'
+import { mintProviderToken, requireCredentials } from '../helpers/externalSandbox.js'
+
+/**
+ * EXAMPLE: provider round-trip happy path. The service-api suite covers 401 and
+ * validation for this endpoint; this file drives the real external create by
+ * minting a provider-issued token against the sandbox.
+ *
+ * Pattern: mint → persist via OUR endpoint → verify via a follow-up read.
+ * Suffix the describe with the dependency so logs distinguish the suites.
+ */
+test.describe('POST /api/<resource> (sandbox)', () => {
+  test('creates a resource from a real provider token and surfaces it on the list', async ({
+    request,
+  }) => {
+    const creds = requireCredentials()
+    const { token } = await createAuthedUser(request)
+    const providerToken = await mintProviderToken(creds)
+
+    // Act: persist through our own endpoint (the external exchange happens here).
+    const createRes = await request.post('/api/<resource>', {
+      headers: bearer(token),
+      data: { providerToken },
+    })
+    await expectStatus(createRes, 201)
+    const created = (await createRes.json()).data as { id: string }
+
+    // Prove the round-trip happened: the resource is readable and shape-conforming.
+    const listRes = await request.get('/api/<resource>', { headers: bearer(token) })
+    await expectOk(listRes)
+    const items = (await listRes.json()).data.items as Array<{ id: string }>
+    const match = items.find((i) => i.id === created.id)
+    expect(match, 'created resource should appear in the list').toBeDefined()
+  })
+})
