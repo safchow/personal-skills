@@ -38,5 +38,8 @@ Shared fixtures, scenarios, stubs and config: test-shared skill. CI gating: ci-m
 - A green local run isn't a green PR: CI runs the merge of the PR with `main`. Rebase onto current `main` and run `type-check` before calling a PR done. Before rewriting a branch, check `git ls-remote`; if it was pushed, add a commit instead.
 - A test that exposes a bug ships with its fix in one PR, and fails without the fix (#188, #184). Never write a test that enshrines wrong behaviour to stay green.
 - Merges to `main` are merge commits, not squash. A rebase conflict means two PRs touched the same lines (usually the same spot in a spec): keep both sides, re-run the spec.
-- CI retries failed specs (up to 2 on service suites). Track retries per spec and treat a spec that needs one as a bug.
+- Stubbed suites run each spec once; only `integration/*` retries. A flaky stubbed spec fails the PR, so fix it or mark it.
+- Coverage: the Coverage workflow runs on `main`, nightly and on demand, with a 99% floor per service. To measure locally, boot the service through `node_modules/.bin/tsx`, stop it with SIGTERM, and run the report script from the same checkout.
+- Unreachable code is a finding: delete it, or leave defensive lines only a broken platform could reach. Don't mock your way to a number.
+- Cull tests that duplicate another or restate the code; keep tests that prove wiring or an edge.
 - Don't write a test that two endpoints return the same data; it ties two contracts together.
