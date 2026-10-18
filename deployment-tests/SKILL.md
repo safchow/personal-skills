@@ -20,3 +20,5 @@ Placement: test-overview skill.
 - `deployment/migrations`: migrations apply to an empty database. It lists 0 tests unless `DATABASE_URL` is set; that is normal.
 - These gate first in CI. Keep them fast and independent of Plaid and third parties.
 - Every new migration gets its own PR; code PRs stack on it.
+- The image workflow rebuilds only what a change can affect. If you add a file an image copies, add its path to the "shared inputs" list in `deployment-images.yml`.
+- A new root `.dockerignore` entry can silently break an image build (excluding the frontend by mistake once). Build every image you could affect.
