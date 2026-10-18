@@ -22,6 +22,8 @@ Templates (`templates/`, raw text with a `.txt` suffix, drop the suffix on copy)
 - Isolate by `uniqueId()` data, not resets. Give each user a fresh `uniqueIp()` so per-IP rate limits don't leak between specs.
 - Check response bodies with `expectMatchesSchema(res, SomeResponseSchema)` (the DTO schema from core): it also fails on fields outside the schema. Borrow input types from the source of truth; assert outputs against expected shapes, not the service's own DTOs.
 - Don't add a 401/403/two-factor/404-for-others test to a new endpoint spec; the default-deny guard is tested once in `routes/protections.spec.ts`. Add the route there only if it is public or exempt from two-factor, a deliberate list in the backend.
+- New routes: the Plaid rate-limit lint rule (#201) fails the build for a non-GET route without `plaidRateLimit`. A route that never calls Plaid needs a disable comment giving the reason (see #43).
+- Before adding a stub control, check for an existing one; keep stub changes minimal and typed against the SDK.
 - Don't write a test that two endpoints return the same data (a closed PR; it ties two contracts together).
 - One endpoint per spec file, named after it; a top-level describe "<METHOD> <path>"; one test per behavior. Single call to the endpoint under test per Act (a follow-up read to confirm a side effect is fine).
 - Setup goes through named helpers; never inline plumbing in a spec.
